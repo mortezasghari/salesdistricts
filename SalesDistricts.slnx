@@ -1,1 +1,13 @@
-<Solution />
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="compose.yaml" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="SalesDistricts.Api/SalesDistricts.Api.csproj" />
+    <Project Path="SalesDistricts.Core/SalesDistricts.Core.csproj" />
+    <Project Path="SalesDistricts.Date/SalesDistricts.Date.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="SalesDistricts.Tests/SalesDistricts.Tests.csproj" />
+  </Folder>
+</Solution>

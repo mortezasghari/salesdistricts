@@ -1,0 +1,7 @@
+﻿services:
+  salesdistricts.api:
+    image: salesdistricts.api
+    build:
+      context: .
+      dockerfile: SalesDistricts.Api/Dockerfile
+
