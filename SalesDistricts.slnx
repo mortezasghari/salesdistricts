@@ -6,6 +6,7 @@
     <Project Path="SalesDistricts.Api/SalesDistricts.Api.csproj" />
     <Project Path="SalesDistricts.Core/SalesDistricts.Core.csproj" />
     <Project Path="SalesDistricts.Data\SalesDistricts.Data.csproj" />
+    <Project Path="SalesDistricts.Desktop/SalesDistricts.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="SalesDistricts.Tests/SalesDistricts.Tests.csproj" />
