@@ -1,9 +1,21 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
     </PropertyGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Scripts\*.sql" LogicalName="%(Filename)%(Extension)"/>
+        <EmbeddedResource Include="Scripts\Ups\*.sql" LogicalName="Ups/%(Filename)%(Extension)"/>
+        <EmbeddedResource Include="Scripts\Downs\*.sql" LogicalName="Downs/%(Filename)%(Extension)"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Dapper" Version="2.1.86" />
+      <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.0" />
+      <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
+    </ItemGroup>
 
 </Project>
