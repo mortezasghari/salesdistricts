@@ -1,4 +1,5 @@
 using SalesDistricts.Data;
+using Shouldly;
 
 namespace SalesDistricts.Tests.Database;
 
@@ -14,12 +15,14 @@ public sealed class DistrictRepositoryTests(SqlServerFixture fixture)
     [Fact]
     public async Task GetAll_returns_the_seeded_districts_sorted_by_name()
     {
-        var districts = await Repository.GetAllAsync();
+        var names = (await Repository.GetAllAsync()).Select(d => d.Name).ToList();
 
-        var names = districts.Select(d => d.Name).ToList();
-        Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal), names);
-        Assert.All(new[] { "Capital Region", "Central Denmark", "North Denmark", "Southern Denmark", "Zealand" },
-            expected => Assert.Contains(expected, names));
+        names.ShouldBe(names.OrderBy(n => n, StringComparer.Ordinal));
+        names.ShouldContain("Capital Region");
+        names.ShouldContain("Central Denmark");
+        names.ShouldContain("North Denmark");
+        names.ShouldContain("Southern Denmark");
+        names.ShouldContain("Zealand");
     }
 
     [Fact]
@@ -27,11 +30,11 @@ public sealed class DistrictRepositoryTests(SqlServerFixture fixture)
     {
         var district = await Repository.GetAsync(CapitalRegion);
 
-        Assert.NotNull(district);
-        Assert.Equal("Capital Region", district.Name);
-        Assert.Equal(["Sofie Pedersen", "Jonas Andersen"], district.Salespersons.Select(s => s.Name));
-        Assert.Equal([true, false], district.Salespersons.Select(s => s.IsPrimary));
-        Assert.Equal(["Fields", "Lyngby Storcenter"], district.Stores.Select(s => s.Name));
+        district.ShouldNotBeNull();
+        district.Name.ShouldBe("Capital Region");
+        district.Salespersons.Select(s => s.Name).ShouldBe(["Sofie Pedersen", "Jonas Andersen"]);
+        district.Salespersons.Select(s => s.IsPrimary).ShouldBe([true, false]);
+        district.Stores.Select(s => s.Name).ShouldBe(["Fields", "Lyngby Storcenter"]);
     }
 
     [Fact]
@@ -39,14 +42,13 @@ public sealed class DistrictRepositoryTests(SqlServerFixture fixture)
     {
         var district = await Repository.GetAsync(SouthernDenmark);
 
-        Assert.NotNull(district);
-        Assert.Single(district.Salespersons);
-        Assert.True(district.Salespersons[0].IsPrimary);
+        district.ShouldNotBeNull();
+        district.Salespersons.ShouldHaveSingleItem().IsPrimary.ShouldBeTrue();
     }
 
     [Fact]
     public async Task Get_returns_null_for_an_unknown_id()
     {
-        Assert.Null(await Repository.GetAsync(Guid.NewGuid()));
+        (await Repository.GetAsync(Guid.NewGuid())).ShouldBeNull();
     }
 }

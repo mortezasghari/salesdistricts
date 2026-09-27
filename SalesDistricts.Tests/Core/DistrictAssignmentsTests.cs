@@ -1,113 +1,115 @@
+using Moq;
 using SalesDistricts.Core;
+using Shouldly;
 
 namespace SalesDistricts.Tests.Core;
 
-/// <summary>Rules only; the repository is an in-memory fake. Database behaviour is covered in Database/.</summary>
+/// <summary>Rules only; repositories are mocked. Database behaviour is covered in Database/.</summary>
 public sealed class DistrictAssignmentsTests
 {
     private static readonly Guid North = Guid.NewGuid();
-    private static readonly Guid Anders = Guid.NewGuid();
-    private static readonly Guid Mette = Guid.NewGuid();
-    private static readonly Guid Lars = Guid.NewGuid();
+    private static readonly Guid Anders = Guid.NewGuid(); // primary of North
+    private static readonly Guid Mette = Guid.NewGuid();  // secondary in North
+    private static readonly Guid Lars = Guid.NewGuid();   // not assigned
 
-    private readonly FakeRepository _repo = new(primary: Anders, secondaries: [Mette], known: [Anders, Mette, Lars]);
-    private DistrictAssignments Sut => new(_repo, _repo);
+    private readonly Mock<IDistrictRepository> _districts = new();
+    private readonly Mock<IDistrictAssignmentRepository> _assignments = new();
+
+    private DistrictAssignments Sut => new(_districts.Object, _assignments.Object);
+
+    public DistrictAssignmentsTests()
+    {
+        _districts.Setup(d => d.GetAsync(North)).ReturnsAsync(new DistrictDetails(North, "North Denmark",
+            [new DistrictSalesperson(Anders, "Anders", null, IsPrimary: true), new DistrictSalesperson(Mette, "Mette", null, IsPrimary: false)],
+            []));
+        _assignments.Setup(a => a.SalespersonExistsAsync(It.IsIn(Anders, Mette, Lars))).ReturnsAsync(true);
+    }
 
     [Fact]
     public async Task Adding_a_new_secondary_adds_them()
     {
-        Assert.Equal(AssignmentResult.Ok, await Sut.AssignAsync(North, Lars, Role.Secondary));
-        Assert.Equal([Mette, Lars], _repo.Secondaries);
+        var result = await Sut.AssignAsync(North, Lars, Role.Secondary);
+
+        result.ShouldBe(AssignmentResult.Ok);
+        _assignments.Verify(a => a.AddSecondaryAsync(North, Lars), Times.Once);
     }
 
     [Fact]
     public async Task Adding_an_existing_secondary_again_is_a_no_op()
     {
-        Assert.Equal(AssignmentResult.Ok, await Sut.AssignAsync(North, Mette, Role.Secondary));
-        Assert.Equal([Mette], _repo.Secondaries);
+        var result = await Sut.AssignAsync(North, Mette, Role.Secondary);
+
+        result.ShouldBe(AssignmentResult.Ok);
+        _assignments.Verify(a => a.AddSecondaryAsync(It.IsAny<Guid>(), It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]
     public async Task The_primary_cannot_be_demoted_to_secondary()
     {
-        Assert.Equal(AssignmentResult.SalespersonIsPrimary, await Sut.AssignAsync(North, Anders, Role.Secondary));
-        Assert.Equal(Anders, _repo.Primary);
+        var result = await Sut.AssignAsync(North, Anders, Role.Secondary);
+
+        result.ShouldBe(AssignmentResult.SalespersonIsPrimary);
+        VerifyNoWrites();
     }
 
     [Fact]
     public async Task Making_someone_primary_delegates_to_the_atomic_operation()
     {
-        Assert.Equal(AssignmentResult.Ok, await Sut.AssignAsync(North, Mette, Role.Primary));
-        Assert.Equal(Mette, _repo.Primary);
-        Assert.Equal([Anders], _repo.Secondaries); // old primary kept as secondary, new primary no longer a secondary
+        var result = await Sut.AssignAsync(North, Mette, Role.Primary);
+
+        result.ShouldBe(AssignmentResult.Ok);
+        _assignments.Verify(a => a.SetPrimaryAsync(North, Mette), Times.Once);
     }
 
     [Fact]
     public async Task Making_the_current_primary_primary_again_is_a_no_op()
     {
-        Assert.Equal(AssignmentResult.Ok, await Sut.AssignAsync(North, Anders, Role.Primary));
-        Assert.Equal(0, _repo.SetPrimaryCalls);
+        var result = await Sut.AssignAsync(North, Anders, Role.Primary);
+
+        result.ShouldBe(AssignmentResult.Ok);
+        VerifyNoWrites();
     }
 
     [Fact]
     public async Task Unknown_district_or_salesperson_are_reported()
     {
-        Assert.Equal(AssignmentResult.DistrictNotFound, await Sut.AssignAsync(Guid.NewGuid(), Lars, Role.Secondary));
-        Assert.Equal(AssignmentResult.SalespersonNotFound, await Sut.AssignAsync(North, Guid.NewGuid(), Role.Secondary));
-        Assert.Equal(AssignmentResult.DistrictNotFound, await Sut.RemoveAsync(Guid.NewGuid(), Mette));
+        (await Sut.AssignAsync(Guid.NewGuid(), Lars, Role.Secondary)).ShouldBe(AssignmentResult.DistrictNotFound);
+        (await Sut.AssignAsync(North, Guid.NewGuid(), Role.Secondary)).ShouldBe(AssignmentResult.SalespersonNotFound);
+        (await Sut.RemoveAsync(Guid.NewGuid(), Mette)).ShouldBe(AssignmentResult.DistrictNotFound);
+        VerifyNoWrites();
     }
 
     [Fact]
     public async Task Removing_a_secondary_removes_them()
     {
-        Assert.Equal(AssignmentResult.Ok, await Sut.RemoveAsync(North, Mette));
-        Assert.Empty(_repo.Secondaries);
+        var result = await Sut.RemoveAsync(North, Mette);
+
+        result.ShouldBe(AssignmentResult.Ok);
+        _assignments.Verify(a => a.RemoveSecondaryAsync(North, Mette), Times.Once);
     }
 
     [Fact]
     public async Task Removing_the_primary_is_refused()
     {
-        Assert.Equal(AssignmentResult.SalespersonIsPrimary, await Sut.RemoveAsync(North, Anders));
-        Assert.Equal(Anders, _repo.Primary);
+        var result = await Sut.RemoveAsync(North, Anders);
+
+        result.ShouldBe(AssignmentResult.SalespersonIsPrimary);
+        VerifyNoWrites();
     }
 
     [Fact]
     public async Task Removing_someone_not_on_the_district_is_reported()
     {
-        Assert.Equal(AssignmentResult.NotAssigned, await Sut.RemoveAsync(North, Lars));
+        var result = await Sut.RemoveAsync(North, Lars);
+
+        result.ShouldBe(AssignmentResult.NotAssigned);
+        VerifyNoWrites();
     }
 
-    private sealed class FakeRepository(Guid primary, List<Guid> secondaries, Guid[] known)
-        : IDistrictRepository, IDistrictAssignmentRepository
+    private void VerifyNoWrites()
     {
-        public Guid Primary { get; private set; } = primary;
-        public List<Guid> Secondaries { get; } = secondaries;
-        public int SetPrimaryCalls { get; private set; }
-
-        public Task<IReadOnlyList<District>> GetAllAsync() => throw new NotSupportedException();
-
-        public Task<DistrictDetails?> GetAsync(Guid id)
-        {
-            if (id != North) return Task.FromResult<DistrictDetails?>(null);
-            var people = new[] { new DistrictSalesperson(Primary, "", null, true) }
-                .Concat(Secondaries.Select(s => new DistrictSalesperson(s, "", null, false)))
-                .ToList();
-            return Task.FromResult<DistrictDetails?>(new DistrictDetails(id, "North", people, []));
-        }
-
-        public Task<bool> SalespersonExistsAsync(Guid salespersonId) => Task.FromResult(known.Contains(salespersonId));
-
-        public Task SetPrimaryAsync(Guid districtId, Guid salespersonId)
-        {
-            SetPrimaryCalls++;
-            Secondaries.Remove(salespersonId);
-            Secondaries.Add(Primary);
-            Primary = salespersonId;
-            return Task.CompletedTask;
-        }
-
-        public Task AddSecondaryAsync(Guid districtId, Guid salespersonId) { Secondaries.Add(salespersonId); return Task.CompletedTask; }
-
-        public Task RemoveSecondaryAsync(Guid districtId, Guid salespersonId) { Secondaries.Remove(salespersonId); return Task.CompletedTask; }
+        _assignments.Verify(a => a.SetPrimaryAsync(It.IsAny<Guid>(), It.IsAny<Guid>()), Times.Never);
+        _assignments.Verify(a => a.AddSecondaryAsync(It.IsAny<Guid>(), It.IsAny<Guid>()), Times.Never);
+        _assignments.Verify(a => a.RemoveSecondaryAsync(It.IsAny<Guid>(), It.IsAny<Guid>()), Times.Never);
     }
 }

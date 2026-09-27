@@ -1,5 +1,6 @@
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Shouldly;
 
 namespace SalesDistricts.Tests.Database;
 
@@ -33,11 +34,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         c.ExecuteAsync("INSERT INTO sales.DistrictSecondarySalesperson (DistrictId, SalespersonId) VALUES (@districtId, @salespersonId)",
             new { districtId, salespersonId });
 
-    private static async Task AssertSqlError(int expectedNumber, Func<Task> action)
-    {
-        var ex = await Assert.ThrowsAsync<SqlException>(action);
-        Assert.Equal(expectedNumber, ex.Number);
-    }
+    private static async Task ShouldFailWith(int sqlErrorNumber, Func<Task> action) =>
+        (await Should.ThrowAsync<SqlException>(action)).Number.ShouldBe(sqlErrorNumber);
 
     [Fact]
     public async Task Keys_are_generated_by_the_database()
@@ -46,8 +44,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var first = await InsertSalesperson(c);
         var second = await InsertSalesperson(c);
 
-        Assert.NotEqual(Guid.Empty, first);
-        Assert.NotEqual(first, second);
+        first.ShouldNotBe(Guid.Empty);
+        second.ShouldNotBe(first);
     }
 
     // ---- exactly one primary per district ---------------------------------------------------
@@ -56,7 +54,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
     public async Task District_cannot_be_created_without_a_primary_salesperson()
     {
         using var c = fixture.Open();
-        await AssertSqlError(CannotInsertNull, () =>
+        await ShouldFailWith(CannotInsertNull, () =>
             c.ExecuteAsync("INSERT INTO sales.District (Name, PrimarySalespersonId) VALUES (@name, NULL)", new { name = Unique("District") }));
     }
 
@@ -64,7 +62,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
     public async Task District_primary_must_be_an_existing_salesperson()
     {
         using var c = fixture.Open();
-        await AssertSqlError(ConstraintViolation, () => InsertDistrict(c, Guid.NewGuid()));
+        await ShouldFailWith(ConstraintViolation, () => InsertDistrict(c, Guid.NewGuid()));
     }
 
     [Fact]
@@ -72,7 +70,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
     {
         using var c = fixture.Open();
         var district = await InsertDistrict(c, await InsertSalesperson(c));
-        await AssertSqlError(CannotInsertNull, () =>
+        await ShouldFailWith(CannotInsertNull, () =>
             c.ExecuteAsync("UPDATE sales.District SET PrimarySalespersonId = NULL WHERE Id = @district", new { district }));
     }
 
@@ -82,7 +80,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         using var c = fixture.Open();
         var primary = await InsertSalesperson(c);
         await InsertDistrict(c, primary);
-        await AssertSqlError(ConstraintViolation, () =>
+        await ShouldFailWith(ConstraintViolation, () =>
             c.ExecuteAsync("DELETE FROM sales.Salesperson WHERE Id = @primary", new { primary }));
     }
 
@@ -94,8 +92,9 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var first = await InsertDistrict(c, primary);
         var second = await InsertDistrict(c, primary);
 
-        Assert.Equal(2, await c.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.District WHERE PrimarySalespersonId = @primary AND Id IN (@first, @second)", new { primary, first, second }));
+        (await c.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.District WHERE PrimarySalespersonId = @primary AND Id IN (@first, @second)",
+            new { primary, first, second })).ShouldBe(2);
     }
 
     // ---- zero or more secondaries -----------------------------------------------------------
@@ -108,8 +107,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         await AddSecondary(c, district, await InsertSalesperson(c));
         await AddSecondary(c, district, await InsertSalesperson(c));
 
-        Assert.Equal(2, await c.ExecuteScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE DistrictId = @district", new { district }));
+        (await c.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE DistrictId = @district", new { district })).ShouldBe(2);
     }
 
     [Fact]
@@ -119,7 +118,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var district = await InsertDistrict(c, await InsertSalesperson(c));
         var secondary = await InsertSalesperson(c);
         await AddSecondary(c, district, secondary);
-        await AssertSqlError(DuplicateKey, () => AddSecondary(c, district, secondary));
+        await ShouldFailWith(DuplicateKey, () => AddSecondary(c, district, secondary));
     }
 
     [Fact]
@@ -128,8 +127,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         using var c = fixture.Open();
         var district = await InsertDistrict(c, await InsertSalesperson(c));
         var salesperson = await InsertSalesperson(c);
-        await AssertSqlError(ConstraintViolation, () => AddSecondary(c, Guid.NewGuid(), salesperson));
-        await AssertSqlError(ConstraintViolation, () => AddSecondary(c, district, Guid.NewGuid()));
+        await ShouldFailWith(ConstraintViolation, () => AddSecondary(c, Guid.NewGuid(), salesperson));
+        await ShouldFailWith(ConstraintViolation, () => AddSecondary(c, district, Guid.NewGuid()));
     }
 
     [Fact]
@@ -142,8 +141,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
 
         await c.ExecuteAsync("DELETE FROM sales.District WHERE Id = @district", new { district });
 
-        Assert.Equal(0, await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE DistrictId = @district", new { district }));
-        Assert.Equal(1, await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.Salesperson WHERE Id = @secondary", new { secondary }));
+        (await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE DistrictId = @district", new { district })).ShouldBe(0);
+        (await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.Salesperson WHERE Id = @secondary", new { secondary })).ShouldBe(1);
     }
 
     [Fact]
@@ -156,7 +155,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
 
         await c.ExecuteAsync("DELETE FROM sales.Salesperson WHERE Id = @secondary", new { secondary });
 
-        Assert.Equal(0, await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE SalespersonId = @secondary", new { secondary }));
+        (await c.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM sales.DistrictSecondarySalesperson WHERE SalespersonId = @secondary", new { secondary })).ShouldBe(0);
     }
 
     // ---- stores -----------------------------------------------------------------------------
@@ -165,8 +164,8 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
     public async Task Store_must_belong_to_an_existing_district()
     {
         using var c = fixture.Open();
-        await AssertSqlError(ConstraintViolation, () => InsertStore(c, Guid.NewGuid()));
-        await AssertSqlError(CannotInsertNull, () =>
+        await ShouldFailWith(ConstraintViolation, () => InsertStore(c, Guid.NewGuid()));
+        await ShouldFailWith(CannotInsertNull, () =>
             c.ExecuteAsync("INSERT INTO sales.Store (Name, DistrictId) VALUES (@name, NULL)", new { name = Unique("Store") }));
     }
 
@@ -181,7 +180,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
 
         await InsertStore(c, first, name);
         await InsertStore(c, second, name);
-        await AssertSqlError(DuplicateKey, () => InsertStore(c, first, name));
+        await ShouldFailWith(DuplicateKey, () => InsertStore(c, first, name));
     }
 
     [Fact]
@@ -190,7 +189,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         using var c = fixture.Open();
         var district = await InsertDistrict(c, await InsertSalesperson(c));
         await InsertStore(c, district);
-        await AssertSqlError(ConstraintViolation, () =>
+        await ShouldFailWith(ConstraintViolation, () =>
             c.ExecuteAsync("DELETE FROM sales.District WHERE Id = @district", new { district }));
     }
 
@@ -203,7 +202,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var primary = await InsertSalesperson(c);
         var name = Unique("North Denmark");
         await InsertDistrict(c, primary, name);
-        await AssertSqlError(DuplicateKey, () => InsertDistrict(c, primary, name));
+        await ShouldFailWith(DuplicateKey, () => InsertDistrict(c, primary, name));
     }
 
     [Theory]
@@ -215,9 +214,9 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var primary = await InsertSalesperson(c);
         var district = await InsertDistrict(c, primary);
 
-        await AssertSqlError(ConstraintViolation, () => InsertSalesperson(c, blank));
-        await AssertSqlError(ConstraintViolation, () => InsertDistrict(c, primary, blank));
-        await AssertSqlError(ConstraintViolation, () => InsertStore(c, district, blank));
+        await ShouldFailWith(ConstraintViolation, () => InsertSalesperson(c, blank));
+        await ShouldFailWith(ConstraintViolation, () => InsertDistrict(c, primary, blank));
+        await ShouldFailWith(ConstraintViolation, () => InsertStore(c, district, blank));
     }
 
     [Fact]
@@ -229,7 +228,7 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         await InsertSalesperson(c, email: null);
         await InsertSalesperson(c, email: null);
         await InsertSalesperson(c, email: email);
-        await AssertSqlError(DuplicateIndexKey, () => InsertSalesperson(c, email: email));
+        await ShouldFailWith(DuplicateIndexKey, () => InsertSalesperson(c, email: email));
     }
 
     // ---- view -------------------------------------------------------------------------------
@@ -248,9 +247,10 @@ public sealed class SchemaConstraintTests(SqlServerFixture fixture)
         var rows = (await c.QueryAsync<(Guid SalespersonId, bool IsPrimary)>(
             "SELECT SalespersonId, IsPrimary FROM sales.vDistrictSalesperson WHERE DistrictId = @district", new { district })).ToList();
 
-        Assert.Equal(3, rows.Count);
-        Assert.Single(rows, r => r.IsPrimary && r.SalespersonId == primary);
-        Assert.Contains(rows, r => r.SalespersonId == secondaryA && !r.IsPrimary);
-        Assert.Contains(rows, r => r.SalespersonId == secondaryB && !r.IsPrimary);
+        rows.Count.ShouldBe(3);
+        rows.ShouldContain(r => r.IsPrimary, expectedCount: 1);
+        rows.ShouldContain(r => r.SalespersonId == primary && r.IsPrimary);
+        rows.ShouldContain(r => r.SalespersonId == secondaryA && !r.IsPrimary);
+        rows.ShouldContain(r => r.SalespersonId == secondaryB && !r.IsPrimary);
     }
 }

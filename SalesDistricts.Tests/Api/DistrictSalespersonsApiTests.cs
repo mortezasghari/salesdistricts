@@ -4,6 +4,7 @@ using Dapper;
 using Microsoft.AspNetCore.Mvc.Testing;
 using SalesDistricts.Core;
 using SalesDistricts.Tests.Database;
+using Shouldly;
 
 namespace SalesDistricts.Tests.Api;
 
@@ -40,7 +41,9 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
     public async Task Salespersons_can_be_listed()
     {
         var salespersons = await Client.GetFromJsonAsync<List<Salesperson>>("/salespersons");
-        Assert.Contains(salespersons!, s => s.Name == "Sofie Pedersen");
+
+        salespersons.ShouldNotBeNull();
+        salespersons.ShouldContain(s => s.Name == "Sofie Pedersen");
     }
 
     [Fact]
@@ -51,8 +54,8 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
 
         var response = await client.PutAsJsonAsync($"/districts/{district}/salespersons/{unassigned}", new AssignRequest(Role.Secondary));
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.False((await RolesAsync(client, district))[unassigned]);
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RolesAsync(client, district))[unassigned].ShouldBeFalse();
     }
 
     [Fact]
@@ -63,11 +66,11 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
 
         var response = await client.PutAsJsonAsync($"/districts/{district}/salespersons/{secondary}", new AssignRequest(Role.Primary));
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
         var roles = await RolesAsync(client, district);
-        Assert.True(roles[secondary]);
-        Assert.False(roles[primary]);
-        Assert.Equal(2, roles.Count);
+        roles[secondary].ShouldBeTrue();
+        roles[primary].ShouldBeFalse();
+        roles.Count.ShouldBe(2);
     }
 
     [Fact]
@@ -77,7 +80,7 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
 
         var response = await Client.PutAsJsonAsync($"/districts/{district}/salespersons/{primary}", new AssignRequest(Role.Secondary));
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }
 
     [Fact]
@@ -88,8 +91,8 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
 
         var response = await client.DeleteAsync($"/districts/{district}/salespersons/{secondary}");
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.DoesNotContain(secondary, (await RolesAsync(client, district)).Keys);
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await RolesAsync(client, district)).Keys.ShouldNotContain(secondary);
     }
 
     [Fact]
@@ -99,8 +102,8 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
 
         var response = await Client.DeleteAsync($"/districts/{district}/salespersons/{primary}");
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("Assign another primary first", await response.Content.ReadAsStringAsync());
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Assign another primary first");
     }
 
     [Fact]
@@ -109,8 +112,11 @@ public sealed class DistrictSalespersonsApiTests(SqlServerFixture fixture)
         var (district, _, _, unassigned) = await SetupAsync();
         var client = Client;
 
-        Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync($"/districts/{Guid.NewGuid()}/salespersons/{unassigned}", new AssignRequest(Role.Secondary))).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.PutAsJsonAsync($"/districts/{district}/salespersons/{Guid.NewGuid()}", new AssignRequest(Role.Secondary))).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"/districts/{district}/salespersons/{unassigned}")).StatusCode);
+        (await client.PutAsJsonAsync($"/districts/{Guid.NewGuid()}/salespersons/{unassigned}", new AssignRequest(Role.Secondary)))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await client.PutAsJsonAsync($"/districts/{district}/salespersons/{Guid.NewGuid()}", new AssignRequest(Role.Secondary)))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await client.DeleteAsync($"/districts/{district}/salespersons/{unassigned}"))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 }
