@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using SalesDistricts.Core;
 
 namespace SalesDistricts.Desktop;
@@ -7,44 +8,76 @@ namespace SalesDistricts.Desktop;
 public partial class MainWindowViewModel(ApiClient api) : ObservableObject
 {
     public ObservableCollection<District> Districts { get; } = [];
+    public ObservableCollection<Salesperson> AllSalespersons { get; } = [];
 
     [ObservableProperty] private District? _selectedDistrict;
     [ObservableProperty] private DistrictDetails? _details;
+    [ObservableProperty] private Salesperson? _salespersonToAdd;
+    [ObservableProperty] private bool _addAsPrimary;
     [ObservableProperty] private string? _error;
 
     public async Task LoadAsync()
     {
-        try
+        await Try(async () =>
         {
-            Error = null;
             Districts.Clear();
-            foreach (var district in await api.GetDistrictsAsync())
-            {
-                Districts.Add(district);
-            }
-        }
-        catch (Exception ex)
+            foreach (var district in await api.GetDistrictsAsync()) Districts.Add(district);
+
+            AllSalespersons.Clear();
+            foreach (var salesperson in await api.GetSalespersonsAsync()) AllSalespersons.Add(salesperson);
+        });
+    }
+
+    partial void OnSelectedDistrictChanged(District? value) => _ = ReloadDetailsAsync();
+
+    [RelayCommand]
+    private async Task AddAsync()
+    {
+        if (SelectedDistrict is null || SalespersonToAdd is null) return;
+        await Change(api.AssignAsync(SelectedDistrict.Id, SalespersonToAdd.Id, AddAsPrimary ? Role.Primary : Role.Secondary));
+    }
+
+    [RelayCommand]
+    private async Task MakePrimaryAsync(DistrictSalesperson salesperson)
+    {
+        if (SelectedDistrict is null) return;
+        await Change(api.AssignAsync(SelectedDistrict.Id, salesperson.Id, Role.Primary));
+    }
+
+    [RelayCommand]
+    private async Task RemoveAsync(DistrictSalesperson salesperson)
+    {
+        if (SelectedDistrict is null) return;
+        await Change(api.RemoveAsync(SelectedDistrict.Id, salesperson.Id));
+    }
+
+    private async Task Change(Task<string?> apiCall)
+    {
+        await Try(async () =>
         {
-            Error = $"Could not load districts: {ex.Message}";
+            Error = await apiCall;
+            await ReloadDetailsAsync();
+        });
+    }
+
+    private async Task ReloadDetailsAsync()
+    {
+        Details = null;
+        if (SelectedDistrict is { } district)
+        {
+            await Try(async () => Details = await api.GetDistrictAsync(district.Id));
         }
     }
 
-    async partial void OnSelectedDistrictChanged(District? value)
+    private async Task Try(Func<Task> action)
     {
-        Details = null;
-        if (value is null)
-        {
-            return;
-        }
-
         try
         {
-            Error = null;
-            Details = await api.GetDistrictAsync(value.Id);
+            await action();
         }
         catch (Exception ex)
         {
-            Error = $"Could not load {value.Name}: {ex.Message}";
+            Error = ex.Message;
         }
     }
 }

@@ -4,7 +4,7 @@
         xmlns:local="using:SalesDistricts.Desktop"
         x:Class="SalesDistricts.Desktop.MainWindow"
         x:DataType="local:MainWindowViewModel"
-        Title="Sales Districts" Width="900" Height="600">
+        Title="Sales Districts" Width="960" Height="640">
 
     <Grid ColumnDefinitions="280,*" Margin="12">
 
@@ -20,7 +20,7 @@
         </DockPanel>
 
         <StackPanel Grid.Column="1" Margin="16,0,0,0" Spacing="8">
-            <TextBlock Text="{Binding Error}" Foreground="Red"
+            <TextBlock Text="{Binding Error}" Foreground="Red" TextWrapping="Wrap"
                        IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
             <TextBlock Text="Select a district to see its salespersons and stores." Foreground="Gray"
@@ -33,20 +33,41 @@
                 <ItemsControl ItemsSource="{Binding Details.Salespersons}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="core:DistrictSalesperson">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="{Binding Name}"/>
-                                <TextBlock Text="(primary)" FontWeight="Bold" IsVisible="{Binding IsPrimary}"/>
-                                <TextBlock Text="{Binding Email}" Foreground="Gray"/>
-                            </StackPanel>
+                            <Grid ColumnDefinitions="220,80,*,Auto,Auto" Margin="0,2">
+                                <TextBlock Grid.Column="0" Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="primary" FontWeight="Bold" VerticalAlignment="Center" IsVisible="{Binding IsPrimary}"/>
+                                <TextBlock Grid.Column="1" Text="secondary" Foreground="Gray" VerticalAlignment="Center" IsVisible="{Binding !IsPrimary}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Email}" Foreground="Gray" VerticalAlignment="Center"/>
+                                <Button Grid.Column="3" Content="Make primary" Margin="8,0,0,0" IsVisible="{Binding !IsPrimary}"
+                                        Command="{Binding $parent[Window].((local:MainWindowViewModel)DataContext).MakePrimaryCommand}"
+                                        CommandParameter="{Binding}"/>
+                                <Button Grid.Column="4" Content="Remove" Margin="8,0,0,0" IsVisible="{Binding !IsPrimary}"
+                                        Command="{Binding $parent[Window].((local:MainWindowViewModel)DataContext).RemoveCommand}"
+                                        CommandParameter="{Binding}"/>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="Stores" FontWeight="Bold" Margin="0,8,0,0"/>
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <ComboBox Width="220" PlaceholderText="Choose a salesperson"
+                              ItemsSource="{Binding AllSalespersons}" SelectedItem="{Binding SalespersonToAdd}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="core:Salesperson">
+                                <TextBlock Text="{Binding Name}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <RadioButton Content="Secondary" IsChecked="{Binding !AddAsPrimary}" VerticalAlignment="Center"/>
+                    <RadioButton Content="Primary" IsChecked="{Binding AddAsPrimary}" VerticalAlignment="Center"/>
+                    <Button Content="Add" Command="{Binding AddCommand}"/>
+                </StackPanel>
+
+                <TextBlock Text="Stores" FontWeight="Bold" Margin="0,16,0,0"/>
                 <ItemsControl ItemsSource="{Binding Details.Stores}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="core:Store">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
                                 <TextBlock Text="{Binding Name}"/>
                                 <TextBlock Text="{Binding Address}" Foreground="Gray"/>
                             </StackPanel>

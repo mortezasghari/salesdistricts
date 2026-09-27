@@ -11,4 +11,17 @@ public sealed class ApiClient(HttpClient http)
 
     public Task<DistrictDetails?> GetDistrictAsync(Guid id) =>
         http.GetFromJsonAsync<DistrictDetails>($"districts/{id}");
+
+    public async Task<IReadOnlyList<Salesperson>> GetSalespersonsAsync() =>
+        await http.GetFromJsonAsync<List<Salesperson>>("salespersons") ?? [];
+
+    /// <summary>Returns null on success, otherwise the API's explanation.</summary>
+    public async Task<string?> AssignAsync(Guid districtId, Guid salespersonId, Role role) =>
+        await ErrorOf(await http.PutAsJsonAsync($"districts/{districtId}/salespersons/{salespersonId}", new { role = role.ToString() }));
+
+    public async Task<string?> RemoveAsync(Guid districtId, Guid salespersonId) =>
+        await ErrorOf(await http.DeleteAsync($"districts/{districtId}/salespersons/{salespersonId}"));
+
+    private static async Task<string?> ErrorOf(HttpResponseMessage response) =>
+        response.IsSuccessStatusCode ? null : await response.Content.ReadFromJsonAsync<string>() ?? response.ReasonPhrase;
 }
